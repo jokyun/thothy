@@ -5,14 +5,19 @@ export async function verifyUserAuthenticated(): Promise<
   { user: User; session: Session } | undefined
 > {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!user || !session) {
+  
+  // Get authenticated user data (this is secure)
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (userError || !userData.user) {
     return undefined;
   }
-  return { user, session };
+  
+  // We still need the session for some functionality
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) {
+    return undefined;
+  }
+  
+  return { user: userData.user, session };
 }
+

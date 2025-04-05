@@ -91,7 +91,7 @@ export const Thread: FC<ThreadProps> = (props: ThreadProps) => {
   };
 
   return (
-    <ThreadPrimitive.Root className="flex flex-col h-full w-full">
+    <ThreadPrimitive.Root className="flex flex-col h-full w-full overflow-hidden">
       <div className="pr-3 pl-6 pt-3 pb-2 flex flex-row gap-4 items-center justify-between">
         <div className="flex items-center justify-start gap-2 text-gray-600">
           <ThreadHistory
@@ -163,11 +163,11 @@ export const Thread: FC<ThreadProps> = (props: ThreadProps) => {
           }}
         />
       </ThreadPrimitive.Viewport>
-      <div className="mt-4 flex w-full flex-col items-center justify-end rounded-t-lg bg-inherit pb-4 px-4">
+      <div className="mt-4 flex w-full flex-col items-center justify-end rounded-t-lg bg-inherit pb-12 px-4">
         <ThreadScrollToBottom />
         <div className="w-full max-w-2xl">
           {hasChatStarted && (
-            <div className="flex flex-col space-y-2">
+            <div className="flex flex-col space-y-2 mb-4">
               <ModelSelector
                 modelName={modelName}
                 setModelName={setModelName}

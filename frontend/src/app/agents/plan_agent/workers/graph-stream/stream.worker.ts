@@ -12,7 +12,10 @@ ctx.addEventListener("message", async (event: MessageEvent<StreamConfig>) => {
     const client = createClient();
 
     const stream = client.runs.stream(threadId, assistantId, {
-      input: input as Record<string, unknown>,
+      input: {
+        ...input as Record<string, unknown>,
+        assistant_id: assistantId,
+      },
       streamMode: "events",
       config: {
         configurable: {
