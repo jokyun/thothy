@@ -63,7 +63,8 @@ export function ContentComposerChatInterfaceComponent(
   const messageRef = useRef<HTMLDivElement>(null) as React.RefObject<HTMLDivElement>;
   const ffmpegRef = useRef(new FFmpeg());
 
-  async function onNew(message: AppendMessage): Promise<void> {
+  // Memoize onNew callback to prevent recreating on every render
+  const onNew = React.useCallback(async (message: AppendMessage): Promise<void> => {
     // Explicitly check for false and not ! since this does not provide a default value
     // so we should assume undefined is true.
     if (message.startRun === false) return;
@@ -125,49 +126,91 @@ export function ContentComposerChatInterfaceComponent(
       // Re-fetch threads so that the current thread's title is updated.
       await getUserThreads();
     }
-  }
+  }, [userData.user, props.setChatStarted, setIsRunning, setIsStreaming, setMessages, streamMessage, getUserThreads, toast]);
+
+  // Memoize message converter callback to prevent recreation on every render
+  const messageConverterCallback = React.useCallback((message) => {
+    // Default values
+    let role: "user" | "system" | "assistant" = "user";
+    let content = "";
+    let messageId = uuidv4();
+    
+    // Safely handle null message
+    if (!message) {
+      return { role, content, id: messageId };
+    }
+    
+    // Try to set message ID if available
+    if (message.id) {
+      messageId = message.id;
+    }
+    
+    // Safely determine role with minimal type checking
+    try {
+      if (typeof message._getType === 'function') {
+        const type = message._getType();
+        if (type === "human") {
+          role = "user";
+        } else if (type === "system") {
+          role = "system";
+        } else {
+          role = "assistant";
+        }
+      } else if ('role' in message && typeof message.role === 'string') {
+        if (message.role === "user" || message.role === "system" || message.role === "assistant") {
+          role = message.role;
+        }
+      }
+    } catch (err) {
+      console.error("Error determining message role:", err);
+    }
+    
+    // Safely handle content with minimal type checking
+    try {
+      if (typeof message.content === 'string') {
+        content = message.content;
+      } else if (message.content) {
+        content = JSON.stringify(message.content);
+      }
+    } catch (err) {
+      console.error("Error processing message content:", err);
+    }
+    
+    return {
+      role,
+      content,
+      id: messageId,
+    };
+  }, []);
 
   const threadMessages = useExternalMessageConverter<BaseMessage>({
-    callback: (message) => {
-      const type = message._getType();
-      let role: "user" | "system" | "assistant";
-      
-      if (type === "human") {
-        role = "user";
-      } else if (type === "system") {
-        role = "system";
-      } else {
-        role = "assistant";
-      }
-      
-      const content = typeof message.content === 'string' 
-        ? message.content 
-        : JSON.stringify(message.content);
-      
-      return {
-        role,
-        content,
-        id: message.id,
-      };
-    },
+    callback: messageConverterCallback,
     messages,
     isRunning,
     joinStrategy: "none",
   });
 
-  const runtime = useExternalStoreRuntime({
+  // Create composite adapter only once
+  const compositeAdapter = React.useMemo(() => new CompositeAttachmentAdapter([
+    new SimpleTextAttachmentAdapter(),
+    new AudioAttachmentAdapter(),
+    new VideoAttachmentAdapter(),
+    new PDFAttachmentAdapter(),
+  ]), []);
+
+  // Call the hook at the top level, not inside another hook
+  const runtimeBase = useExternalStoreRuntime({
     messages: threadMessages,
     isRunning,
     onNew,
     adapters: {
-      attachments: new CompositeAttachmentAdapter([
-        new SimpleTextAttachmentAdapter(),
-        new AudioAttachmentAdapter(),
-        new VideoAttachmentAdapter(),
-        new PDFAttachmentAdapter(),
-      ]),
+      attachments: compositeAdapter,
     },
   });
+
+  // Memoize the runtime object to prevent recreation on every render
+  const runtime = React.useMemo(() => runtimeBase, 
+    [runtimeBase]);
 
   return (
     <div className="h-full w-full pb-4">

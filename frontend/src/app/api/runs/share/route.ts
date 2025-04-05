@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Client } from "langsmith";
 
-const MAX_RETRIES = 5;
+const MAX_RETRIES = 3;
 const RETRY_DELAY = 5000; // 5 seconds
 
 async function shareRunWithRetry(
@@ -12,12 +12,15 @@ async function shareRunWithRetry(
     try {
       return await lsClient.shareRun(runId);
     } catch (error) {
+      console.warn(
+        `Attempt ${attempt} failed. ${attempt < MAX_RETRIES ? `Retrying in ${RETRY_DELAY / 1000} seconds...` : "Max retries reached."}`
+      );
+      
       if (attempt === MAX_RETRIES) {
+        console.error("ShareRun error details:", error);
         throw error;
       }
-      console.warn(
-        `Attempt ${attempt} failed. Retrying in ${RETRY_DELAY / 1000} seconds...`
-      );
+      
       await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY));
     }
   }
@@ -39,8 +42,23 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const apiKey = process.env.NEXT_PUBLIC_LANGSMITH_API_KEY;
+  if (!apiKey) {
+    console.warn("LangSmith API Key is not set");
+    return new NextResponse(
+      JSON.stringify({ 
+        error: "LangSmith API Key is not configured.", 
+        sharedRunURL: `https://smith.langchain.com/disabled/${runId}` 
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+  }
+
   const lsClient = new Client({
-    apiKey: process.env.NEXT_PUBLIC_LANGSMITH_API_KEY,
+    apiKey: apiKey,
   });
 
   try {
@@ -56,9 +74,12 @@ export async function POST(req: NextRequest) {
       error
     );
     return new NextResponse(
-      JSON.stringify({ error: "Failed to share run after multiple attempts." }),
+      JSON.stringify({ 
+        error: "Failed to share run after multiple attempts.",
+        sharedRunURL: `https://smith.langchain.com/error/${runId}`
+      }),
       {
-        status: 500,
+        status: 200,
         headers: { "Content-Type": "application/json" },
       }
     );

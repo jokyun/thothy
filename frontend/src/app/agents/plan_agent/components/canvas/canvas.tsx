@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import { ArtifactRenderer } from "../artifacts/ArtifactRenderer";
 import { WebSearchResults } from "../web-search-results";
 import {
@@ -17,7 +18,7 @@ import {
   CustomModelConfig,
   ProgrammingLanguageOptions,
 } from "@opencanvas/shared/types";
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { ContentComposerChatInterface } from "./content-composer";
 import NoSSRWrapper from "../NoSSRWrapper";
 import { useThreadContext } from "../../contexts/ThreadProvider";
@@ -28,6 +29,7 @@ import {
 } from "../ui/resizable";
 import { CHAT_COLLAPSED_QUERY_PARAM } from "../../constants";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Thread as ThreadType } from "@langchain/langgraph-sdk";
 
 export function CanvasComponent() {
   const { graphData } = useGraphContext();
@@ -41,20 +43,56 @@ export function CanvasComponent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const chatCollapsedSearchParam = searchParams.get(CHAT_COLLAPSED_QUERY_PARAM);
+  
   useEffect(() => {
+    if (!chatCollapsedSearchParam) return;
+    
     try {
-      if (chatCollapsedSearchParam) {
-        setChatCollapsed(JSON.parse(chatCollapsedSearchParam));
+      const collapsed = JSON.parse(chatCollapsedSearchParam);
+      if (chatCollapsed !== collapsed) {
+        setChatCollapsed(collapsed);
       }
     } catch (_e) {
-      setChatCollapsed(false);
       const queryParams = new URLSearchParams(searchParams.toString());
       queryParams.delete(CHAT_COLLAPSED_QUERY_PARAM);
       router.replace(`?${queryParams.toString()}`, { scroll: false });
     }
-  }, [chatCollapsedSearchParam]);
+  }, [chatCollapsedSearchParam, router, searchParams, chatCollapsed]);
 
-  const handleQuickStart = (
+  const updateChatCollapsed = React.useCallback((c: boolean) => {
+    if (c === chatCollapsed) return;
+    
+    setChatCollapsed(c);
+    const queryParams = new URLSearchParams(searchParams.toString());
+    queryParams.set(CHAT_COLLAPSED_QUERY_PARAM, JSON.stringify(c));
+    router.replace(`?${queryParams.toString()}`, { scroll: false });
+  }, [chatCollapsed, router, searchParams]);
+
+  const switchSelectedThreadCallback = React.useCallback((thread: ThreadType) => {
+    const hasMessages = Boolean((thread.values as Record<string, any>)?.messages?.length);
+    
+    if (hasMessages) {
+      setChatStarted(true);
+      if (thread?.metadata?.customModelName) {
+        setModelName(thread.metadata.customModelName as ALL_MODEL_NAMES);
+      } else {
+        setModelName(DEFAULT_MODEL_NAME);
+      }
+
+      if (thread?.metadata?.modelConfig) {
+        setModelConfig(
+          (thread?.metadata?.customModelName ?? DEFAULT_MODEL_NAME) as ALL_MODEL_NAMES,
+          (thread.metadata?.modelConfig ?? DEFAULT_MODEL_CONFIG) as CustomModelConfig
+        );
+      } else {
+        setModelConfig(DEFAULT_MODEL_NAME, DEFAULT_MODEL_CONFIG);
+      }
+    } else {
+      setChatStarted(false);
+    }
+  }, [setChatStarted, setModelName, setModelConfig]);
+
+  const handleQuickStart = React.useCallback((
     type: "text" | "code",
     language?: ProgrammingLanguageOptions
   ) => {
@@ -90,12 +128,9 @@ export function CanvasComponent() {
       currentIndex: 1,
       contents: [artifactContent],
     };
-    // Do not worry about existing items in state. This should
-    // never occur since this action can only be invoked if
-    // there are no messages/artifacts in the thread.
     setArtifact(newArtifact);
     setIsEditing(true);
-  };
+  }, [setChatStarted, setArtifact, toast]);
 
   return (
     <ResizablePanelGroup direction="horizontal" className="h-screen">
@@ -103,38 +138,8 @@ export function CanvasComponent() {
         <NoSSRWrapper>
           <ContentComposerChatInterface
             chatCollapsed={chatCollapsed}
-            setChatCollapsed={(c) => {
-              setChatCollapsed(c);
-              const queryParams = new URLSearchParams(searchParams.toString());
-              queryParams.set(CHAT_COLLAPSED_QUERY_PARAM, JSON.stringify(c));
-              router.replace(`?${queryParams.toString()}`, { scroll: false });
-            }}
-            switchSelectedThreadCallback={(thread) => {
-              // Chat should only be "started" if there are messages present
-              if ((thread.values as Record<string, any>)?.messages?.length) {
-                setChatStarted(true);
-                if (thread?.metadata?.customModelName) {
-                  setModelName(
-                    thread.metadata.customModelName as ALL_MODEL_NAMES
-                  );
-                } else {
-                  setModelName(DEFAULT_MODEL_NAME);
-                }
-
-                if (thread?.metadata?.modelConfig) {
-                  setModelConfig(
-                    (thread?.metadata?.customModelName ??
-                      DEFAULT_MODEL_NAME) as ALL_MODEL_NAMES,
-                    (thread.metadata?.modelConfig ??
-                      DEFAULT_MODEL_CONFIG) as CustomModelConfig
-                  );
-                } else {
-                  setModelConfig(DEFAULT_MODEL_NAME, DEFAULT_MODEL_CONFIG);
-                }
-              } else {
-                setChatStarted(false);
-              }
-            }}
+            setChatCollapsed={updateChatCollapsed}
+            switchSelectedThreadCallback={switchSelectedThreadCallback}
             setChatStarted={setChatStarted}
             hasChatStarted={chatStarted}
             handleQuickStart={handleQuickStart}
@@ -153,40 +158,8 @@ export function CanvasComponent() {
           <NoSSRWrapper>
             <ContentComposerChatInterface
               chatCollapsed={chatCollapsed}
-              setChatCollapsed={(c) => {
-                setChatCollapsed(c);
-                const queryParams = new URLSearchParams(
-                  searchParams.toString()
-                );
-                queryParams.set(CHAT_COLLAPSED_QUERY_PARAM, JSON.stringify(c));
-                router.replace(`?${queryParams.toString()}`, { scroll: false });
-              }}
-              switchSelectedThreadCallback={(thread) => {
-                // Chat should only be "started" if there are messages present
-                if ((thread.values as Record<string, any>)?.messages?.length) {
-                  setChatStarted(true);
-                  if (thread?.metadata?.customModelName) {
-                    setModelName(
-                      thread.metadata.customModelName as ALL_MODEL_NAMES
-                    );
-                  } else {
-                    setModelName(DEFAULT_MODEL_NAME);
-                  }
-
-                  if (thread?.metadata?.modelConfig) {
-                    setModelConfig(
-                      (thread?.metadata.customModelName ??
-                        DEFAULT_MODEL_NAME) as ALL_MODEL_NAMES,
-                      (thread.metadata.modelConfig ??
-                        DEFAULT_MODEL_CONFIG) as CustomModelConfig
-                    );
-                  } else {
-                    setModelConfig(DEFAULT_MODEL_NAME, DEFAULT_MODEL_CONFIG);
-                  }
-                } else {
-                  setChatStarted(false);
-                }
-              }}
+              setChatCollapsed={updateChatCollapsed}
+              switchSelectedThreadCallback={switchSelectedThreadCallback}
               setChatStarted={setChatStarted}
               hasChatStarted={chatStarted}
               handleQuickStart={handleQuickStart}
@@ -209,19 +182,7 @@ export function CanvasComponent() {
             <div className="w-full ml-auto">
               <ArtifactRenderer
                 chatCollapsed={chatCollapsed}
-                setChatCollapsed={(c) => {
-                  setChatCollapsed(c);
-                  const queryParams = new URLSearchParams(
-                    searchParams.toString()
-                  );
-                  queryParams.set(
-                    CHAT_COLLAPSED_QUERY_PARAM,
-                    JSON.stringify(c)
-                  );
-                  router.replace(`?${queryParams.toString()}`, {
-                    scroll: false,
-                  });
-                }}
+                setChatCollapsed={updateChatCollapsed}
                 setIsEditing={setIsEditing}
                 isEditing={isEditing}
               />

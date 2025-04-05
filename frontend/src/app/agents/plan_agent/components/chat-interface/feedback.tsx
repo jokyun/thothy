@@ -4,6 +4,7 @@ import { ThumbsUpIcon, ThumbsDownIcon } from "lucide-react";
 import { Dispatch, FC, SetStateAction } from "react";
 import { cn } from "../../lib/utils";
 import { TooltipIconButton } from "../assistant-ui/tooltip-icon-button";
+import React from "react";
 
 interface FeedbackButtonProps {
   runId: string;
@@ -29,7 +30,7 @@ export const FeedbackButton: FC<FeedbackButtonProps> = ({
 }) => {
   const { toast } = useToast();
 
-  const handleClick = async () => {
+  const handleClick = React.useCallback(async () => {
     try {
       const res = await sendFeedback(runId, "feedback", feedbackValue);
       if (res?.success) {
@@ -48,7 +49,7 @@ export const FeedbackButton: FC<FeedbackButtonProps> = ({
         variant: "destructive",
       });
     }
-  };
+  }, [runId, setFeedbackSubmitted, sendFeedback, feedbackValue, toast]);
 
   const tooltip = `Give ${icon === "thumbs-up" ? "positive" : "negative"} feedback on this run`;
 

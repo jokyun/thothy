@@ -41,16 +41,37 @@ const ThinkingAssistantMessageComponent = ({
 }): React.ReactElement => {
   const { id, content } = message;
   let contentText = "";
-  if (typeof content === "string") {
-    contentText = content;
-  } else {
-    const firstItem = content?.[0];
-    if (firstItem?.type === "text") {
-      contentText = firstItem.text;
+  
+  // Safe handling of different content types
+  try {
+    if (typeof content === 'string') {
+      contentText = content;
+    } else if (Array.isArray(content)) {
+      // Try to extract text from array of content items
+      const textItems = content
+        .filter(item => !!item) // Filter out null/undefined
+        .map(item => {
+          if (typeof item === 'string') return item;
+          if (item.type === 'text' && typeof item.text === 'string') return item.text;
+          return '';
+        })
+        .filter(text => text !== '');
+      
+      contentText = textItems.join('\n');
+    } else if (content && typeof content === 'object') {
+      // Try to extract text from object
+      if ('text' in content && typeof content.text === 'string') {
+        contentText = content.text;
+      } else {
+        contentText = JSON.stringify(content);
+      }
     }
+  } catch (error) {
+    console.error("Error processing thinking message content:", error);
+    contentText = "Error displaying thinking process";
   }
 
-  if (contentText === "") {
+  if (!contentText) {
     return <></>;
   }
 
@@ -76,13 +97,20 @@ const WebSearchMessageComponent = ({ message }: { message: MessageState }) => {
     WEB_SEARCH_RESULTS_QUERY_PARAM
   );
 
-  const handleShowWebSearchResults = () => {
-    if (!message.id) {
+  // Safe handler that checks id before updating state
+  const handleShowWebSearchResults = React.useCallback(() => {
+    if (!message || !message.id) {
+      console.warn("Cannot show web search results: missing message ID");
       return;
     }
 
     setShowWebResultsId(message.id);
-  };
+  }, [message, setShowWebResultsId]);
+
+  // Only render if we have a valid message
+  if (!message || !message.id) {
+    return null;
+  }
 
   return (
     <div className="flex mx-8">
@@ -118,6 +146,11 @@ export const AssistantMessage: FC<AssistantMessageProps> = ({
     return <WebSearchMessage message={message} />;
   }
 
+  // Fix: Optimize to prevent unnecessary re-renders
+  const shouldShowFeedback = React.useMemo(() => {
+    return isLast && Boolean(runId) && !feedbackSubmitted;
+  }, [isLast, runId, feedbackSubmitted]);
+
   return (
     <MessagePrimitive.Root className="relative grid w-full max-w-2xl grid-cols-[auto_auto_1fr] grid-rows-[auto_1fr] py-4">
       <Avatar className="col-start-1 row-span-full row-start-1 mr-4">
@@ -126,12 +159,12 @@ export const AssistantMessage: FC<AssistantMessageProps> = ({
 
       <div className="text-foreground col-span-2 col-start-2 row-start-1 my-1.5 max-w-xl break-words leading-7">
         <MessagePrimitive.Content components={{ Text: MarkdownText }} />
-        {isLast && runId && (
+        {shouldShowFeedback && (
           <MessagePrimitive.If lastOrHover assistant>
             <AssistantMessageBar
               feedbackSubmitted={feedbackSubmitted}
               setFeedbackSubmitted={setFeedbackSubmitted}
-              runId={runId}
+              runId={runId as string}
             />
           </MessagePrimitive.If>
         )}
@@ -171,6 +204,8 @@ const AssistantMessageBarComponent = ({
   setFeedbackSubmitted,
 }: AssistantMessageBarProps) => {
   const { isLoading, sendFeedback } = useFeedback();
+  
+  // Memoize this component to prevent re-renders
   return (
     <ActionBarPrimitive.Root
       hideWhenRunning
@@ -182,7 +217,8 @@ const AssistantMessageBarComponent = ({
           Feedback received! Thank you!
         </TighterText>
       ) : (
-        <>
+        // Use React.Fragment to prevent unnecessary DOM elements
+        <React.Fragment>
           <ActionBarPrimitive.FeedbackPositive asChild>
             <FeedbackButton
               isLoading={isLoading}
@@ -203,10 +239,19 @@ const AssistantMessageBarComponent = ({
               icon="thumbs-down"
             />
           </ActionBarPrimitive.FeedbackNegative>
-        </>
+        </React.Fragment>
       )}
     </ActionBarPrimitive.Root>
   );
 };
 
-const AssistantMessageBar = React.memo(AssistantMessageBarComponent);
+// Use React.memo with a custom comparison function to prevent unnecessary re-renders
+const AssistantMessageBar = React.memo(
+  AssistantMessageBarComponent,
+  (prevProps, nextProps) => {
+    // Only re-render if these props change
+    return prevProps.runId === nextProps.runId &&
+           prevProps.feedbackSubmitted === nextProps.feedbackSubmitted &&
+           prevProps.setFeedbackSubmitted === nextProps.setFeedbackSubmitted;
+  }
+);

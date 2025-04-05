@@ -7,6 +7,7 @@ import React from "react";
 import { cn } from "@/lib/utils";
 import { useQueryParams } from "./hooks/use-query-params";
 import { VIEW_STATE_THREAD_QUERY_PARAM } from "./constants";
+import ErrorBoundary from "@/components/error-boundary";
 
 export function ThreadView<
   ThreadValues extends Record<string, any> = Record<string, any>,
@@ -17,6 +18,7 @@ export function ThreadView<
     React.useState<ThreadData<ThreadValues>>();
   const [showDescription, setShowDescription] = React.useState(true);
   const [showState, setShowState] = React.useState(false);
+  const [hasValidData, setHasValidData] = React.useState(false);
   const showSidePanel = showDescription || showState;
 
   React.useEffect(() => {
@@ -28,6 +30,11 @@ export function ThreadView<
       );
       if (selectedThread) {
         setThreadData(selectedThread);
+        setHasValidData(
+          selectedThread.status === "interrupted" && 
+          !!selectedThread.interrupts && 
+          selectedThread.interrupts.length > 0
+        );
         return;
       } else {
         // Route the user back to the inbox view.
@@ -36,7 +43,7 @@ export function ThreadView<
     } catch (e) {
       console.error("Error updating query params & setting thread data", e);
     }
-  }, [threads, loading, threadId]);
+  }, [threads, loading, threadId, updateQueryParams]);
 
   const handleShowSidePanel = (
     showState: boolean,
@@ -58,49 +65,53 @@ export function ThreadView<
     }
   };
 
-  if (
-    !threadData ||
-    threadData.status !== "interrupted" ||
-    !threadData.interrupts ||
-    threadData.interrupts.length === 0
-  ) {
-    return null;
+  // If there's no valid data, render a loading state or error message
+  if (!hasValidData || !threadData) {
+    return (
+      <div className="flex items-center justify-center w-full h-full p-6">
+        <p className="text-lg text-gray-600">
+          {loading ? "Loading thread data..." : "No valid interrupted thread found"}
+        </p>
+      </div>
+    );
   }
 
   return (
-    <div className="flex flex-col lg:flex-row w-full h-full">
-      <div
-        className={cn(
-          "flex overflow-y-auto",
-          showSidePanel ? "lg:min-w-1/2 lg:max-w-2xl w-full" : "w-full"
-        )}
-      >
-        <ThreadActionsView<ThreadValues>
-          threadData={
-            threadData as {
-              thread: Thread<ThreadValues>;
-              status: "interrupted";
-              interrupts: HumanInterrupt[];
+    <ErrorBoundary>
+      <div className="flex flex-col lg:flex-row w-full h-full">
+        <div
+          className={cn(
+            "flex overflow-y-auto",
+            showSidePanel ? "lg:min-w-1/2 lg:max-w-2xl w-full" : "w-full"
+          )}
+        >
+          <ThreadActionsView<ThreadValues>
+            threadData={
+              threadData as {
+                thread: Thread<ThreadValues>;
+                status: "interrupted";
+                interrupts: HumanInterrupt[];
+              }
             }
-          }
-          setThreadData={setThreadData}
-          handleShowSidePanel={handleShowSidePanel}
-          showState={showState}
-          showDescription={showDescription}
-        />
+            setThreadData={setThreadData}
+            handleShowSidePanel={handleShowSidePanel}
+            showState={showState}
+            showDescription={showDescription}
+          />
+        </div>
+        <div
+          className={cn(
+            showSidePanel ? "flex" : "hidden",
+            "overflow-y-auto lg:max-w-1/2 w-full"
+          )}
+        >
+          <StateView
+            handleShowSidePanel={handleShowSidePanel}
+            threadData={threadData}
+            view={showState ? "state" : "description"}
+          />
+        </div>
       </div>
-      <div
-        className={cn(
-          showSidePanel ? "flex" : "hidden",
-          "overflow-y-auto lg:max-w-1/2 w-full"
-        )}
-      >
-        <StateView
-          handleShowSidePanel={handleShowSidePanel}
-          threadData={threadData}
-          view={showState ? "state" : "description"}
-        />
-      </div>
-    </div>
+    </ErrorBoundary>
   );
 }

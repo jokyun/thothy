@@ -181,6 +181,7 @@ export function GraphProvider({ children }: { children: ReactNode }) {
     if (!threadData.threadId) return;
     if (!messages.length || !artifact) return;
     if (updateRenderedArtifactRequired || threadSwitched || isStreaming) return;
+    
     const currentIndex = artifact.currentIndex;
     const currentContent = artifact.contents.find(
       (c) => c.index === currentIndex
@@ -196,16 +197,17 @@ export function GraphProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    // Fix: Add equality check to prevent unnecessary updates
     if (
       !lastSavedArtifact.current ||
-      lastSavedArtifact.current.contents !== artifact.contents
+      JSON.stringify(lastSavedArtifact.current.contents) !== JSON.stringify(artifact.contents)
     ) {
       setIsArtifactSaved(false);
       // This means the artifact in state does not match the last saved artifact
       // We need to update
       debouncedAPIUpdate(artifact, threadData.threadId);
     }
-  }, [artifact, threadData.threadId]);
+  }, [artifact, threadData.threadId, messages.length, updateRenderedArtifactRequired, threadSwitched, isStreaming]);
 
   const searchOrCreateEffectRan = useRef(false);
 
@@ -237,7 +239,7 @@ export function GraphProvider({ children }: { children: ReactNode }) {
       // Failed to fetch thread. Remove from query params
       threadData.setThreadId(null);
     });
-  }, [threadData.threadId, userData.user]);
+  }, [threadData.threadId, userData.user, threadData.createThreadLoading, threadData.getThread]);
 
   const updateArtifact = async (
     artifactToUpdate: ArtifactV3,
@@ -1270,12 +1272,21 @@ export function GraphProvider({ children }: { children: ReactNode }) {
                 (tc) => tc.name === "langsmith_tool_ui"
               )
             ) {
+              // 명시적으로 sharedRunURL이 문자열이고 필요한 부분을 포함하는지 확인
+              let runIdFromURL = undefined;
+              
+              if (typeof sharedRunURL === 'string' && sharedRunURL.includes('https://smith.langchain.com/public/')) {
+                try {
+                  runIdFromURL = sharedRunURL.split('https://smith.langchain.com/public/')[1].split('/')[0];
+                } catch (error) {
+                  console.error('Error parsing LangSmith URL:', error);
+                }
+              }
+              
               const toolCall = {
                 name: "langsmith_tool_ui",
                 args: { sharedRunURL },
-                id: sharedRunURL
-                  ?.split("https://smith.langchain.com/public/")[1]
-                  .split("/")[0],
+                id: runIdFromURL || `langsmith-${Date.now()}`, // 고유 ID 생성 보장
               };
               const castMsg = msg as AIMessage;
               const newMessageWithToolCall = new AIMessage({
@@ -1396,21 +1407,54 @@ export function GraphProvider({ children }: { children: ReactNode }) {
       return;
     }
     setArtifact(castValues?.artifact);
-    setMessages(
-      castValues.messages.map((msg: Record<string, any>) => {
-        if (msg.response_metadata?.langSmithRunURL) {
-          msg.tool_calls = msg.tool_calls ?? [];
-          msg.tool_calls.push({
-            name: "langsmith_tool_ui",
-            args: { sharedRunURL: msg.response_metadata.langSmithRunURL },
-            id: msg.response_metadata.langSmithRunURL
-              ?.split("https://smith.langchain.com/public/")[1]
-              .split("/")[0],
-          });
+    
+    // Create a new array of processed messages to avoid mutating the original
+    const processedMessages = castValues.messages.map((msg: Record<string, any>) => {
+      const newMsg = { ...msg }; // Create a shallow copy
+      
+      // Only process this if we need to add LangSmith tool call
+      if (newMsg.response_metadata?.langSmithRunURL && 
+          (!newMsg.tool_calls || !newMsg.tool_calls.some((tc: any) => tc.name === "langsmith_tool_ui"))) {
+        
+        let runId: string | undefined = undefined;
+        
+        try {
+          // Safer URL parsing with string checks
+          if (typeof newMsg.response_metadata.langSmithRunURL === 'string' && 
+              newMsg.response_metadata.langSmithRunURL.includes('https://smith.langchain.com/public/')) {
+            const urlParts = newMsg.response_metadata.langSmithRunURL
+              .split("https://smith.langchain.com/public/");
+            if (urlParts.length > 1) {
+              const idParts = urlParts[1].split("/");
+              if (idParts.length > 0) {
+                runId = idParts[0];
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Error parsing LangSmith URL:', error);
         }
-        return msg as BaseMessage;
-      })
-    );
+        
+        // Only add tool calls if we have valid data
+        if (newMsg.response_metadata.langSmithRunURL) {
+          // Create a new array if tool_calls doesn't exist
+          const newToolCalls = newMsg.tool_calls ? [...newMsg.tool_calls] : [];
+          
+          newToolCalls.push({
+            name: "langsmith_tool_ui",
+            args: { sharedRunURL: newMsg.response_metadata.langSmithRunURL },
+            id: runId || `langsmith-${Date.now()}`
+          });
+          
+          newMsg.tool_calls = newToolCalls;
+        }
+      }
+      
+      return newMsg;
+    });
+    
+    // Set the messages all at once to prevent multiple renders
+    setMessages(processedMessages as unknown as BaseMessage[]);
   };
 
   const contextValue: GraphContentType = {

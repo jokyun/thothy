@@ -199,31 +199,13 @@ function EditAndOrAcceptComponent({
     e: React.MouseEvent<HTMLButtonElement, MouseEvent> | React.KeyboardEvent
   ) => Promise<void>;
 }) {
+  // Always initialize hooks regardless of rendering condition
   const defaultRows = React.useRef<Record<string, number>>({});
+  const [editsMade, setEditsMade] = React.useState(false);
+  
   const editResponse = humanResponse.find((r) => r.type === "edit");
   const acceptResponse = humanResponse.find((r) => r.type === "accept");
-  if (
-    !editResponse ||
-    typeof editResponse.args !== "object" ||
-    !editResponse.args
-  ) {
-    if (acceptResponse) {
-      return (
-        <AcceptComponent
-          actionRequestArgs={interruptValue.action_request.args}
-          streaming={streaming}
-          handleSubmit={handleSubmit}
-        />
-      );
-    }
-    return null;
-  }
-  const header = editResponse.acceptAllowed ? "Edit/Accept" : "Edit";
-  let buttonText = "Submit";
-  if (editResponse.acceptAllowed && !editResponse.editsMade) {
-    buttonText = "Accept";
-  }
-
+  
   const handleReset = () => {
     if (
       !editResponse ||
@@ -257,6 +239,30 @@ function EditAndOrAcceptComponent({
       handleSubmit(e);
     }
   };
+  
+  // Early returns with proper UI
+  if (
+    !editResponse ||
+    typeof editResponse.args !== "object" ||
+    !editResponse.args
+  ) {
+    if (acceptResponse) {
+      return (
+        <AcceptComponent
+          actionRequestArgs={interruptValue.action_request.args}
+          streaming={streaming}
+          handleSubmit={handleSubmit}
+        />
+      );
+    }
+    return null;
+  }
+
+  const header = editResponse.acceptAllowed ? "Edit/Accept" : "Edit";
+  let buttonText = "Submit";
+  if (editResponse.acceptAllowed && !editResponse.editsMade) {
+    buttonText = "Accept";
+  }
 
   return (
     <div className="flex flex-col gap-4 items-start w-full p-6 rounded-lg border-[1px] border-gray-300">

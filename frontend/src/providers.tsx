@@ -5,6 +5,7 @@ import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { NuqsAdapter } from "nuqs/adapters/next/app";
+import ErrorBoundary from '@/components/error-boundary';
 
 const theme = createTheme({
   palette: {
@@ -52,7 +53,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <AuthProvider>
         <ThemeProvider theme={theme}>
           <CssBaseline />
-          {children}
+          <ErrorBoundary>
+            {children}
+          </ErrorBoundary>
         </ThemeProvider>
       </AuthProvider>
     </NuqsAdapter>

@@ -17,6 +17,7 @@ import { ThreadWelcome } from "./welcome";
 import { useUserContext } from "../../contexts/UserContext";
 import { useThreadContext } from "../../contexts/ThreadProvider";
 import { useAssistantContext } from "../../contexts/AssistantContext";
+import React from "react";
 
 const ThreadScrollToBottom: FC = () => {
   return (
@@ -70,7 +71,8 @@ export const Thread: FC<ThreadProps> = (props: ThreadProps) => {
   // Render the LangSmith trace link
   useLangSmithLinkToolUI();
 
-  const handleNewSession = async () => {
+  // Wrap handleNewSession in useCallback to prevent recreation on every render
+  const handleNewSession = React.useCallback(async () => {
     if (!user) {
       toast({
         title: "User not found",
@@ -84,57 +86,94 @@ export const Thread: FC<ThreadProps> = (props: ThreadProps) => {
     // Remove the threadId param from the URL
     setThreadId(null);
 
+    // Direct assignment instead of functional update since modelName is already a string
     setModelName(modelName);
     setModelConfig(modelName, modelConfig);
     clearState();
     setChatStarted(false);
-  };
+  }, [user, setThreadId, setModelName, modelName, modelConfig, setModelConfig, clearState, setChatStarted, toast]);
+
+  // Memoize thread content to prevent unnecessary re-renders
+  const renderThreadHeader = React.useMemo(() => (
+    <div className="pr-3 pl-6 pt-3 pb-2 flex flex-row gap-4 items-center justify-between">
+      <div className="flex items-center justify-start gap-2 text-gray-600">
+        <ThreadHistory
+          switchSelectedThreadCallback={switchSelectedThreadCallback}
+        />
+        <TighterText className="text-xl">Open Canvas</TighterText>
+        {!hasChatStarted && (
+          <ModelSelector
+            modelName={modelName}
+            setModelName={setModelName}
+            modelConfig={modelConfig}
+            setModelConfig={setModelConfig}
+            modelConfigs={modelConfigs}
+          />
+        )}
+      </div>
+      {hasChatStarted ? (
+        <div className="flex flex-row flex-1 gap-2 items-center justify-end">
+          <TooltipIconButton
+            tooltip="Collapse Chat"
+            variant="ghost"
+            className="w-8 h-8"
+            delayduration={400}
+            onClick={() => props.setChatCollapsed(true)}
+          >
+            <PanelRightOpen className="text-gray-600" />
+          </TooltipIconButton>
+          <TooltipIconButton
+            tooltip="New chat"
+            variant="ghost"
+            className="w-8 h-8"
+            delayduration={400}
+            onClick={handleNewSession}
+          >
+            <SquarePen className="text-gray-600" />
+          </TooltipIconButton>
+        </div>
+      ) : (
+        <div className="flex flex-row gap-2 items-center">
+          <ReflectionsDialog selectedAssistant={selectedAssistant} />
+        </div>
+      )}
+    </div>
+  ), [hasChatStarted, modelName, modelConfig, modelConfigs, setModelName, setModelConfig, handleNewSession, 
+      props.setChatCollapsed, switchSelectedThreadCallback, selectedAssistant]);
+
+  // Prevent infinite re-renders from AssistantMessage component by memoizing the component rendering
+  const assistantMessageRenderer = React.useCallback((prop: any) => (
+    <AssistantMessage
+      {...prop}
+      feedbackSubmitted={feedbackSubmitted}
+      setFeedbackSubmitted={setFeedbackSubmitted}
+      runId={runId}
+    />
+  ), [feedbackSubmitted, setFeedbackSubmitted, runId]);
+
+  // Memoize composer to prevent unnecessary re-renders
+  const renderComposer = React.useMemo(() => (
+    hasChatStarted ? (
+      <div className="flex flex-col space-y-2 mb-4">
+        <ModelSelector
+          modelName={modelName}
+          setModelName={setModelName}
+          modelConfig={modelConfig}
+          setModelConfig={setModelConfig}
+          modelConfigs={modelConfigs}
+        />
+        <Composer
+          chatStarted={true}
+          userId={props.userId}
+          searchEnabled={props.searchEnabled}
+        />
+      </div>
+    ) : null
+  ), [hasChatStarted, modelName, modelConfig, modelConfigs, setModelName, setModelConfig, props.userId, props.searchEnabled]);
 
   return (
     <ThreadPrimitive.Root className="flex flex-col h-full w-full overflow-hidden">
-      <div className="pr-3 pl-6 pt-3 pb-2 flex flex-row gap-4 items-center justify-between">
-        <div className="flex items-center justify-start gap-2 text-gray-600">
-          <ThreadHistory
-            switchSelectedThreadCallback={switchSelectedThreadCallback}
-          />
-          <TighterText className="text-xl">Open Canvas</TighterText>
-          {!hasChatStarted && (
-            <ModelSelector
-              modelName={modelName}
-              setModelName={setModelName}
-              modelConfig={modelConfig}
-              setModelConfig={setModelConfig}
-              modelConfigs={modelConfigs}
-            />
-          )}
-        </div>
-        {hasChatStarted ? (
-          <div className="flex flex-row flex-1 gap-2 items-center justify-end">
-            <TooltipIconButton
-              tooltip="Collapse Chat"
-              variant="ghost"
-              className="w-8 h-8"
-              delayduration={400}
-              onClick={() => props.setChatCollapsed(true)}
-            >
-              <PanelRightOpen className="text-gray-600" />
-            </TooltipIconButton>
-            <TooltipIconButton
-              tooltip="New chat"
-              variant="ghost"
-              className="w-8 h-8"
-              delayduration={400}
-              onClick={handleNewSession}
-            >
-              <SquarePen className="text-gray-600" />
-            </TooltipIconButton>
-          </div>
-        ) : (
-          <div className="flex flex-row gap-2 items-center">
-            <ReflectionsDialog selectedAssistant={selectedAssistant} />
-          </div>
-        )}
-      </div>
+      {renderThreadHeader}
       <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto scroll-smooth bg-inherit px-4 pt-8">
         {!hasChatStarted && (
           <ThreadWelcome
@@ -152,36 +191,14 @@ export const Thread: FC<ThreadProps> = (props: ThreadProps) => {
         <ThreadPrimitive.Messages
           components={{
             UserMessage: UserMessage,
-            AssistantMessage: (prop) => (
-              <AssistantMessage
-                {...prop}
-                feedbackSubmitted={feedbackSubmitted}
-                setFeedbackSubmitted={setFeedbackSubmitted}
-                runId={runId}
-              />
-            ),
+            AssistantMessage: assistantMessageRenderer,
           }}
         />
       </ThreadPrimitive.Viewport>
       <div className="mt-4 flex w-full flex-col items-center justify-end rounded-t-lg bg-inherit pb-12 px-4">
         <ThreadScrollToBottom />
         <div className="w-full max-w-2xl">
-          {hasChatStarted && (
-            <div className="flex flex-col space-y-2 mb-4">
-              <ModelSelector
-                modelName={modelName}
-                setModelName={setModelName}
-                modelConfig={modelConfig}
-                setModelConfig={setModelConfig}
-                modelConfigs={modelConfigs}
-              />
-              <Composer
-                chatStarted={true}
-                userId={props.userId}
-                searchEnabled={props.searchEnabled}
-              />
-            </div>
-          )}
+          {renderComposer}
         </div>
       </div>
     </ThreadPrimitive.Root>
