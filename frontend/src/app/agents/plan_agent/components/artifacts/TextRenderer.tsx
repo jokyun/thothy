@@ -14,10 +14,12 @@ import { getArtifactContent } from "@opencanvas/shared/utils/artifacts";
 import { useGraphContext } from "../../contexts/GraphContext";
 import React from "react";
 import { TooltipIconButton } from "../ui/assistant-ui/tooltip-icon-button";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, LineChart as LineChartIcon, Copy } from "lucide-react";
 import { motion } from "framer-motion";
 import { Textarea } from "../ui/textarea";
 import { cn } from "../../lib/utils";
+import { ChartRenderer } from "../charts/ChartRenderer";
+import { useToast } from "../../hooks/use-toast";
 
 const cleanText = (text: string) => {
   return text.replaceAll("\\\n", "\n");
@@ -53,6 +55,46 @@ function ViewRawText({
   );
 }
 
+function CopyTextSimple({ text }: { text: string }) {
+  const { toast } = useToast();
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      transition={{ duration: 0.2 }}
+    >
+      <TooltipIconButton
+        tooltip="Copy"
+        variant="outline"
+        className="transition-colors"
+        delayduration={400}
+        onClick={() => {
+          try {
+            navigator.clipboard.writeText(text).then(() => {
+              toast({
+                title: "Copied to clipboard",
+                description: "The content has been copied.",
+                duration: 5000,
+              });
+            });
+          } catch (_) {
+            toast({
+              title: "Copy error",
+              description:
+                "Failed to copy the content. Please try again.",
+              duration: 5000,
+            });
+          }
+        }}
+      >
+        <Copy className="w-5 h-5 text-gray-600" />
+      </TooltipIconButton>
+    </motion.div>
+  );
+}
+
 export interface TextRendererProps {
   isEditing: boolean;
   isHovering: boolean;
@@ -74,6 +116,7 @@ export function TextRendererComponent(props: TextRendererProps) {
 
   const [rawMarkdown, setRawMarkdown] = useState("");
   const [isRawView, setIsRawView] = useState(false);
+  const [isChartView, setIsChartView] = useState(false);
   const [manuallyUpdatingArtifact, setManuallyUpdatingArtifact] =
     useState(false);
 
@@ -214,95 +257,82 @@ export function TextRendererComponent(props: TextRendererProps) {
   };
 
   const onChangeRawMarkdown = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const newRawMarkdown = e.target.value;
-    setRawMarkdown(newRawMarkdown);
-    setArtifact((prev) => {
-      if (!prev) {
-        return {
-          currentIndex: 1,
-          contents: [
-            {
-              index: 1,
-              fullMarkdown: newRawMarkdown,
-              title: "Untitled",
-              type: "text",
-            },
-          ],
-        };
-      } else {
-        return {
-          ...prev,
-          contents: prev.contents.map((c) => {
-            if (c.index === prev.currentIndex) {
-              return {
-                ...c,
-                fullMarkdown: newRawMarkdown,
-              };
-            }
-            return c;
-          }),
-        };
-      }
-    });
+    setRawMarkdown(e.target.value);
   };
 
+  const currentContent = artifact?.contents.find(
+    (c) => c.index === artifact.currentIndex && c.type === "text"
+  ) as ArtifactMarkdownV3 | undefined;
+
+  function ViewChartToggle({
+    isChartView,
+    setIsChartView,
+  }: {
+    isChartView: boolean;
+    setIsChartView: Dispatch<SetStateAction<boolean>>;
+  }) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        transition={{ duration: 0.2 }}
+        className="ml-2"
+      >
+        <TooltipIconButton
+          tooltip={`${isChartView ? 'Hide' : 'Show'} charts`}
+          variant="outline"
+          delayduration={400}
+          onClick={() => setIsChartView((p) => !p)}
+        >
+          <LineChartIcon className="w-5 h-5 text-gray-600" />
+        </TooltipIconButton>
+      </motion.div>
+    );
+  }
+
   return (
-    <div className="w-full h-full mt-2 flex flex-col border-t-[1px] border-gray-200 overflow-y-auto py-5 relative">
-      {props.isHovering && artifact && (
-        <div className="absolute flex gap-2 top-2 right-4 z-10">
-          <CopyText currentArtifactContent={getArtifactContent(artifact)} />
-          <ViewRawText isRawView={isRawView} setIsRawView={setIsRawView} />
+    <div className="flex flex-col">
+      <div className="flex justify-end space-x-2 mb-2">
+        <ViewRawText isRawView={isRawView} setIsRawView={setIsRawView} />
+        <ViewChartToggle isChartView={isChartView} setIsChartView={setIsChartView} />
+        <CopyTextSimple
+          text={
+            rawMarkdown || (currentContent?.fullMarkdown || "")
+          }
+        />
+      </div>
+      
+      {isChartView && currentContent && (
+        <div className="mb-4 border-t pt-4">
+          <h3 className="text-lg font-semibold mb-4">Slides & Visualizations</h3>
+          <ChartRenderer markdown={currentContent.fullMarkdown} />
         </div>
       )}
+
       {isRawView ? (
         <Textarea
-          className="whitespace-pre-wrap font-mono text-sm px-[54px] border-0 shadow-none h-full outline-none ring-0 rounded-none  focus-visible:ring-0 focus-visible:ring-offset-0"
+          className={cn(
+            "bg-gray-900 text-gray-100 font-mono text-base whitespace-pre-wrap h-full min-h-[500px] p-4 resize-none",
+            isChartView && "h-[50vh]"
+          )}
           value={rawMarkdown}
           onChange={onChangeRawMarkdown}
         />
       ) : (
-        <>
-          <style jsx global>{`
-            .pulse-text .bn-block-group {
-              animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-            }
-
-            @keyframes pulse {
-              0%,
-              100% {
-                opacity: 1;
-              }
-              50% {
-                opacity: 0.3;
-              }
-            }
-          `}</style>
+        <div 
+          className={cn(
+            "overflow-hidden border border-input rounded-md bg-background w-full overflow-y-auto",
+            isChartView && "max-h-[50vh]"
+          )}
+        >
           <BlockNoteView
-            theme="light"
-            formattingToolbar={false}
-            slashMenu={false}
-            onCompositionStartCapture={() => (isComposition.current = true)}
-            onCompositionEndCapture={() => (isComposition.current = false)}
-            onChange={onChange}
-            editable={
-              !isStreaming || props.isEditing || !manuallyUpdatingArtifact
-            }
             editor={editor}
-            className={cn(
-              isStreaming && !firstTokenReceived ? "pulse-text" : "",
-              "custom-blocknote-theme"
-            )}
-          >
-            <SuggestionMenuController
-              getItems={async () =>
-                getDefaultReactSlashMenuItems(editor).filter(
-                  (z) => z.group !== "Media"
-                )
-              }
-              triggerCharacter={"/"}
-            />
-          </BlockNoteView>
-        </>
+            onChange={onChange}
+            theme="light"
+            editable={!isStreaming || props.isEditing || !manuallyUpdatingArtifact}
+          />
+        </div>
       )}
     </div>
   );

@@ -84,6 +84,7 @@
     "@uiw/react-codemirror": "^4.23.10",
     "@uiw/react-md-editor": "^4.0.5",
     "@vercel/kv": "^3.0.0",
+    "@xyflow/react": "^12.5.4",
     "ai": "^4.1.62",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
